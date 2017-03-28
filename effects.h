@@ -244,7 +244,7 @@ void sensor() {
       leds[i] = ColorFromPalette(currentPalette, i, 255, LINEARBLEND);
     }
   }
-  INTS = 0;
+  INTS > 0 ? INTS-- : INTS = 0;
   fadeToBlackBy(leds, NUM_LEDS, 16);
 }
 
@@ -253,5 +253,69 @@ void isrService()
   cli();
   INTS++;
   sei();
+}
+
+
+
+unsigned long oldtime = 0;
+unsigned long newtime = 0;
+// Ripple variables
+uint8_t colour;                                               // Ripple colour is randomized.
+int center = 0;                                               // Center of the current ripple.
+int step = -1;                                                // -1 is the initializing step.
+uint8_t myfade = 255;                                         // Starting brightness.
+#define maxsteps 20                                           // Case statement wouldn't allow a variable.
+int peakspersec = 0;
+int peakcount = 0;
+
+void sensor2() {
+  newtime = millis();
+  if (INTS && (newtime > (oldtime + 30))) { // Check for a peak, which is 30 > the average, but wait at least 60ms for another.
+    random16_add_entropy(random());
+    center = random(NUM_LEDS);
+    ledState[center] = random16(25, 45);
+    peakcount++;
+    oldtime = newtime;
+  }
+  INTS > 0 ? INTS-- : INTS = 0;
+}
+
+int ledStateNew[NUM_LEDS];
+void ripple() {
+  EVERY_N_MILLISECONDS(1000) {
+    peakspersec = peakcount;                                  // Count the peaks per second. This value will become the foreground hue.
+  }
+
+  sensor2();
+
+  EVERY_N_MILLISECONDS(10) {
+    fadeToBlackBy(leds, NUM_LEDS, 10);                        // 8 bit, 1 = slow, 255 = fast
+    for (int i = 0; i < NUM_LEDS; i++) {
+      switch (ledState[i]) {
+        case 0:
+          break;
+        default:                                              // Middle of the ripples.
+          colour = (peakspersec * 10) % 255;                  // More peaks/s = higher the hue colour.
+          if (i + 1 < NUM_LEDS) {
+            ledStateNew[i + 1] = ledState[i] - 1;
+          }
+          if (i - 1 >= 0) {
+            ledStateNew[i - 1] = ledState[i] - 1;
+          }
+          ledStateNew[i] = ledState[i] - 1;
+          //          leds[constrain((center + step), 0, NUM_LEDS - 1)] += CHSV(colour, 255, myfade / step * 10);  // Simple wrap from Marc Miller.
+          //          leds[constrain((center - step), 0, NUM_LEDS - 1)] += CHSV(colour, 255, myfade / step * 10);
+          leds[i] = CHSV(colour, 255, 255);
+          break;
+      } // switch step
+    }
+    for (int i = 0; i < NUM_LEDS; i++) {
+      ledState[i] = ledStateNew[i];
+    }
+  }
+} // ripple()
+
+void fire2() {
+  
 }
 

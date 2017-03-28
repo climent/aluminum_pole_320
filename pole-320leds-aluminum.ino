@@ -32,6 +32,7 @@ volatile int16_t INTS = 0;
 #include "effects.h"
 typedef void (*functionList)();
 functionList effectList[] = {
+  ripple,
   sensor,
   inoise8_mover,
   fire,
