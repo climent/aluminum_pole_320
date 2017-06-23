@@ -1,3 +1,9 @@
+void addGlitter(CRGB * leds, uint8_t num_leds) {
+  if ( random8() < chanceOfGlitter) {
+    leds[random16(num_leds)] += CRGB::White;
+  }
+}
+
 void rainbow() {
   for (int i = 0; i < NUM_LEDS; i++) {
     leds[319 - i] = CHSV(hue - i, 255, 255);
@@ -39,7 +45,6 @@ void crawl2() {
   }
 }
 
-
 void beacon() {
   if (beaconCounter == 0) {
     if (counter <= 310 ) {
@@ -58,6 +63,16 @@ void beacon() {
   }
 }
 
+void flash() {
+  if (beaconCounter == 0) {
+    for (int i = 0; i < NUM_LEDS; i++) {
+      leds[i] = CRGB::White;
+    }
+    counter = counter + 64;
+  } else {
+    fadeToBlackBy(leds, NUM_LEDS, 60);
+  }
+}
 
 void cylon() {
   fadeToBlackBy(leds, NUM_LEDS, 5);
@@ -75,6 +90,7 @@ int ledState[NUM_LEDS];
 enum {SteadyDim, GettingBrighter, GettingDimmerAgain};
 
 void twinkles() {
+  fadeToBlackBy(leds, NUM_LEDS, 1);
   random16_add_entropy(random8());
   for ( uint16_t i = 0; i < NUM_LEDS; i++) {
     if ( ledState[i] == SteadyDim) {
@@ -113,7 +129,7 @@ void twinkles() {
 // COOLING: How much does the air cool as it rises?
 // Less cooling = taller flames.  More cooling = shorter flames.
 // Default 50, suggested range 20-100
-#define COOLING  55
+#define COOLING  80
 
 // SPARKING: What chance (out of 255) is there that a new spark will be lit?
 // Higher chance = more roaring fire.  Lower chance = more flickery fire.
@@ -124,15 +140,15 @@ void twinkles() {
 void fire()
 {
   // Array of temperature readings at each simulation cell
-  static byte heat[NUM_LEDS / 5];
+  static byte heat[NUM_LEDS / ledblock];
 
   // Step 1.  Cool down every cell a little
-  for ( int i = 0; i < NUM_LEDS / 5; i++) {
-    heat[i] = qsub8( heat[i],  random8(0, ((COOLING * 10) / (NUM_LEDS / 5)) + 2));
+  for ( int i = 0; i < NUM_LEDS / ledblock; i++) {
+    heat[i] = qsub8( heat[i],  random8(0, ((COOLING * 10) / (NUM_LEDS / ledblock)) + 2));
   }
 
   // Step 2.  Heat from each cell drifts 'up' and diffuses a little
-  for ( int k = NUM_LEDS / 5 - 1; k >= 2; k--) {
+  for ( int k = NUM_LEDS / ledblock - 1; k >= 2; k--) {
     heat[k] = (heat[k - 1] + heat[k - 2] + heat[k - 2] ) / 3;
   }
 
@@ -143,11 +159,46 @@ void fire()
   }
 
   // Step 4.  Map from heat cells to LED colors
-  for ( int j = 0; j < NUM_LEDS / 5; j++) {
+  for ( int j = 0; j < NUM_LEDS / ledblock; j++) {
     CRGB color = HeatColor( heat[j]);
     int pixelnumber;
-    pixelnumber = (NUM_LEDS / 5 - 1) - j;
+    pixelnumber = (NUM_LEDS / ledblock - 1) - j;
     //    pixelnumber = j;
+    for (int k = 0; k < 5; k++) {
+      leds[pixelnumber * 5 + k] = color;
+    }
+  }
+}
+
+void fire2() {
+  // Use Accel data to modify COOLING value.
+  readAccel();
+
+  // Array of temperature readings at each simulation cell
+  static byte heat[NUM_LEDS / ledblock];
+
+  // Step 1.  Cool down every cell a little
+  for ( int i = 0; i < NUM_LEDS / ledblock; i++) {
+    heat[i] = qsub8( heat[i],  random8(0, ((COOLING * 10) / (NUM_LEDS / ledblock)) + 2));
+  }
+
+  // Step 2.  Heat from each cell drifts 'up' and diffuses a little
+  for ( int k = NUM_LEDS / ledblock - 1; k >= 2; k--) {
+    heat[k] = (heat[k - 1] + heat[k - 2] + heat[k - 2] ) / 3;
+  }
+
+  // Step 3.  Randomly ignite new 'sparks' of heat near the bottom
+  if ( random8() < map(vectorDiff, 0, 30, 30, 255) ) {
+    int y = random8(7);
+    heat[y] = qadd8( heat[y], random8(160, 255));
+    //map(vectorDiff, 0, 30, 30, 255)) );
+  }
+
+  // Step 4.  Map from heat cells to LED colors
+  for ( int j = 0; j < NUM_LEDS / ledblock; j++) {
+    CRGB color = HeatColor( heat[j]);
+    int pixelnumber;
+    pixelnumber = (NUM_LEDS / ledblock - 1) - j;
     for (int k = 0; k < 5; k++) {
       leds[pixelnumber * 5 + k] = color;
     }
@@ -158,7 +209,7 @@ void fire()
 const uint16_t kMatrixWidth = 320;
 const uint16_t kMatrixHeight = 1;
 
-#define NUM_LEDS (kMatrixWidth * kMatrixHeight)
+//#define NUM_LEDS (kMatrixWidth * kMatrixHeight)
 #define LAST_VISIBLE_LED 319
 uint16_t XY (uint16_t x, uint16_t y) {
   // any out of bounds address maps to the first hidden pixel
@@ -167,7 +218,26 @@ uint16_t XY (uint16_t x, uint16_t y) {
   }
 
   const uint16_t XYTable[] = {
-    0,   1,   2,   3,   4,   5,   6,   7,   8,   9,  10,  11,  12,  13,  14,  15,  16,  17,  18,  19,  20,  21,  22,  23,  24,  25,  26,  27,  28,  29,  30,  31,  32,  33,  34,  35,  36,  37,  38,  39,  40,  41,  42,  43,  44,  45,  46,  47,  48,  49,  50,  51,  52,  53,  54,  55,  56,  57,  58,  59,  60,  61,  62,  63,  64,  65,  66,  67,  68,  69,  70,  71,  72,  73,  74,  75,  76,  77,  78,  79,  80,  81,  82,  83,  84,  85,  86,  87,  88,  89,  90,  91,  92,  93,  94,  95,  96,  97,  98,  99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 293, 294, 295, 296, 297, 298, 299, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319
+    0,   1,   2,   3,   4,   5,   6,   7,   8,   9,  10,  11,  12,  13,  14,  15,
+    16,  17,  18,  19,  20,  21,  22,  23,  24,  25,  26,  27,  28,  29,  30,  31,
+    32,  33,  34,  35,  36,  37,  38,  39,  40,  41,  42,  43,  44,  45,  46,  47,
+    48,  49,  50,  51,  52,  53,  54,  55,  56,  57,  58,  59,  60,  61,  62,  63,
+    64,  65,  66,  67,  68,  69,  70,  71,  72,  73,  74,  75,  76,  77,  78,  79,
+    80,  81,  82,  83,  84,  85,  86,  87,  88,  89,  90,  91,  92,  93,  94,  95,
+    96,  97,  98,  99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111,
+    112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127,
+    128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143,
+    144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159,
+    160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175,
+    176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191,
+    192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207,
+    208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223,
+    224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239,
+    240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255,
+    256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271,
+    272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287,
+    288, 289, 290, 291, 292, 293, 294, 295, 296, 297, 298, 299, 300, 301, 302, 303,
+    304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319
   };
 
   uint16_t i = (y * kMatrixWidth) + x;
@@ -177,7 +247,6 @@ uint16_t XY (uint16_t x, uint16_t y) {
 
 // Triple Sine Waves
 void threeSine() {
-
   static byte sineOffset = 0; // counter for current position of sine waves
 
   // Draw one frame of the animation into the LED array
@@ -196,14 +265,13 @@ void threeSine() {
   sineOffset++; // byte will wrap from 255 to 0, matching sin8 0-255 cycle
 }
 
-static int16_t dist;
-uint8_t        xscale = 64;
-uint8_t        yscale = 64;
-CRGBPalette16  currentPalette = LavaColors_p;
-CRGBPalette16  targetPalette = OceanColors_p;
-uint8_t        maxChanges = 24;
-
 void inoise8_mover() {
+  static int16_t dist = random(12345);
+  static const uint8_t  xscale = 64;
+  static const uint8_t  yscale = 64;
+  static CRGBPalette16  currentPalette = LavaColors_p;
+  static CRGBPalette16  targetPalette = OceanColors_p;
+  static uint8_t        maxChanges = 24;
 
   EVERY_N_MILLISECONDS(10) {
     nblendPaletteTowardPalette(currentPalette, targetPalette, maxChanges);   // AWESOME palette blending capability.
@@ -217,8 +285,7 @@ void inoise8_mover() {
 
   for (int i = 1; i < 6; i++) {
     uint8_t locn = inoise16(i * xscale, i * (dist + yscale)) % 255;    // Get a new pixel location from moving noise.
-    Serial.println(locn);
-    uint8_t pixlen = map(locn, 0, 255, 0, NUM_LEDS / 5);          // Map that to the length of the strand.
+    uint8_t pixlen = map(locn, 0, 255, 0, NUM_LEDS / ledblock);          // Map that to the length of the strand.
     for (int j = 0; j < 5; j++) {
       leds[pixlen * 5 + j] = ColorFromPalette(currentPalette, pixlen, 255, LINEARBLEND);   // Use that value for both the location as well as the palette index colour for the pixel.
     }
@@ -227,66 +294,29 @@ void inoise8_mover() {
   fadeToBlackBy(leds, NUM_LEDS, 16);
 } // inoise8_mover()
 
-
-
-void sensor() {
-  EVERY_N_MILLISECONDS(10) {
-    nblendPaletteTowardPalette(currentPalette, targetPalette, maxChanges);   // AWESOME palette blending capability.
-    //    fadeToBlackBy(leds, NUM_LEDS, 4);
-  }
-
-  EVERY_N_SECONDS(5) {                                        // Change the target palette to a random one every 5 seconds.
-    targetPalette = CRGBPalette16(CHSV(random8(), 255, random8(128, 255)), CHSV(random8(), 255, random8(128, 255)), CHSV(random8(), 192, random8(128, 255)), CHSV(random8(), 255, random8(128, 255)));
-  }
-
-  if (INTS) {
-    for (int i = 0; i < NUM_LEDS; i++) {
-      leds[i] = ColorFromPalette(currentPalette, i, 255, LINEARBLEND);
-    }
-  }
-  INTS > 0 ? INTS-- : INTS = 0;
-  fadeToBlackBy(leds, NUM_LEDS, 16);
-}
-
-void isrService()
-{
-  cli();
-  INTS++;
-  sei();
-}
-
-
-
-unsigned long oldtime = 0;
-unsigned long newtime = 0;
-// Ripple variables
-uint8_t colour;                                               // Ripple colour is randomized.
-int center = 0;                                               // Center of the current ripple.
-int step = -1;                                                // -1 is the initializing step.
-uint8_t myfade = 255;                                         // Starting brightness.
-#define maxsteps 20                                           // Case statement wouldn't allow a variable.
-int peakspersec = 0;
-int peakcount = 0;
-
-void sensor2() {
-  newtime = millis();
-  if (INTS && (newtime > (oldtime + 30))) { // Check for a peak, which is 30 > the average, but wait at least 60ms for another.
-    random16_add_entropy(random());
-    center = random(NUM_LEDS);
-    ledState[center] = random16(25, 45);
-    peakcount++;
-    oldtime = newtime;
-  }
-  INTS > 0 ? INTS-- : INTS = 0;
-}
-
-int ledStateNew[NUM_LEDS];
 void ripple() {
+  static int ledStateNew[NUM_LEDS];
+  static unsigned long oldtime = 0;
+  static unsigned long newtime = 0;
+  static uint8_t       colour;                                               // Ripple colour is randomized.
+  static int           center = 0;                                               // Center of the current ripple.
+  static int           peakspersec = 0;
+  static int           peakcount = 0;
+
   EVERY_N_MILLISECONDS(1000) {
     peakspersec = peakcount;                                  // Count the peaks per second. This value will become the foreground hue.
   }
 
-  sensor2();
+  newtime = millis();
+  readAccel();
+  if (currentDiff > 10 && (newtime > (oldtime + 30))) { // Check for a peak, which is 30 > the average, but wait at least 60ms for another.
+    random16_add_entropy(random());
+    center = random(NUM_LEDS);
+    ledState[center] = random16(25, constrain(currentDiff, 45, currentDiff * 4));
+    peakcount++;
+    oldtime = newtime;
+    currentDiff /= currentDiff;
+  }
 
   EVERY_N_MILLISECONDS(10) {
     fadeToBlackBy(leds, NUM_LEDS, 10);                        // 8 bit, 1 = slow, 255 = fast
@@ -315,7 +345,137 @@ void ripple() {
   }
 } // ripple()
 
-void fire2() {
-  
+void sensor() {
+  // variables for some of our effects
+  static CRGBPalette16  currentPalette = LavaColors_p;
+  static CRGBPalette16  targetPalette = OceanColors_p;
+  static uint8_t        maxChanges = 24;
+
+
+  readAccel();
+  EVERY_N_MILLISECONDS(10) {
+    nblendPaletteTowardPalette(currentPalette, targetPalette, maxChanges);   // AWESOME palette blending capability.
+    //    fadeToBlackBy(leds, NUM_LEDS, 4);
+  }
+
+  EVERY_N_SECONDS(5) {                                        // Change the target palette to a random one every 5 seconds.
+    targetPalette = CRGBPalette16(CHSV(random8(), 255, random8(128, 255)), CHSV(random8(), 255, random8(128, 255)), CHSV(random8(), 192, random8(128, 255)), CHSV(random8(), 255, random8(128, 255)));
+  }
+
+  if (currentDiff > 1) {
+    for (int i = 0; i < NUM_LEDS; i++) {
+      //      leds[i] = ColorFromPalette(currentPalette, i, adjustedBrightness, LINEARBLEND);
+      leds[i] = ColorFromPalette(currentPalette, i, constrain(255 * 2 / currentDiff, 0, 255), LINEARBLEND);
+    }
+    currentDiff /= currentDiff;
+  }
+  fadeToBlackBy(leds, NUM_LEDS, 8);
 }
+
+
+const uint8_t kxMatrixWidth = 5;
+const uint8_t kxMatrixHeight = 64;
+
+uint16_t XY2( uint8_t x, uint8_t y) {
+  return (y * kxMatrixWidth) + x;
+}
+
+void plasma() {
+
+  static byte offset  = 0; // counter for radial color wave motion
+  static int plasVector = 0; // counter for orbiting plasma center
+
+  // startup tasks
+  //  if (effectInit == false) {
+  //    effectInit = true;
+  //    effectDelay = 10;
+  //  }
+
+  // Calculate current center of plasma pattern (can be offscreen)
+  int xOffset = cos8(plasVector / 256);
+  int yOffset = sin8(plasVector / 256);
+
+  // Draw one frame of the animation into the LED array
+  for (int x = 0; x < kxMatrixWidth; x++) {
+    for (int y = 0; y < kxMatrixHeight; y++) {
+      byte color = sin8(sqrt(sq(((float)x - 7.5) * 10 + xOffset - 127) + sq(((float)y - 2) * 10 + yOffset - 127)) + offset);
+      leds[XY2(x, y)] = CHSV(color, 255, 255);
+    }
+  }
+
+  offset++; // wraps at 255 for sin8
+  plasVector += 16; // using an int for slower orbit (wraps at 65536)
+}
+
+void rider() {
+
+  static byte riderPos = 0;
+
+  //  // startup tasks
+  //  if (effectInit == false) {
+  //    effectInit = true;
+  //    effectDelay = 5;
+  //    riderPos = 0;
+  //  }
+
+  // Draw one frame of the animation into the LED array
+  for (byte x = 0; x < kxMatrixWidth; x++) {
+    int brightness = abs(x * (256 / kxMatrixWidth) - triwave8(riderPos) * 2 + 127) * 3;
+    if (brightness > 255) brightness = 255;
+    brightness = 255 - brightness;
+    CRGB riderColor = CHSV(hue, 255, brightness);
+    for (byte y = 0; y < kxMatrixHeight; y++) {
+      leds[XY2(x, y)] = riderColor;
+    }
+  }
+
+  riderPos++; // byte wraps to 0 at 255, triwave8 is also 0-255 periodic
+}
+
+void glitter() {
+
+  //  // startup tasks
+  //  if (effectInit == false) {
+  //    effectInit = true;
+  //    effectDelay = 15;
+  //  }
+
+  // Draw one frame of the animation into the LED array
+  for (int x = 0; x < kxMatrixWidth; x++) {
+    for (int y = 0; y < kxMatrixHeight; y++) {
+      leds[XY2(x, y)] = CHSV(hue, 255, random8(5) * 63);
+    }
+  }
+}
+
+
+void blurpattern2()
+{
+  static uint8_t kBorderWidth = 0;
+  static uint8_t kSquareWidth = 64;
+  //  if (effectInit == false) {
+  //    effectInit = true;
+  //    effectDelay = 10;
+  //    fadingActive = false;
+  //  }
+
+  // Apply some blurring to whatever's already on the matrix
+  // Note that we never actually clear the matrix, we just constantly
+  // blur it repeatedly.  Since the blurring is 'lossy', there's
+  // an automatic trend toward black -- by design.
+  //  uint8_t blurAmount = dim8_raw( beatsin8(3, 64, 64) );
+  //  blur1d( leds, 320, blurAmount);
+
+  // Use three out-of-sync sine waves
+  uint8_t  i = beatsin16(  91 / 2, kBorderWidth, kSquareWidth - kBorderWidth);
+  uint8_t  j = beatsin16( 109 / 2, kBorderWidth, kSquareWidth - kBorderWidth);
+  uint8_t  k = beatsin16(  73 / 2, kBorderWidth, kSquareWidth - kBorderWidth);
+
+  // The color of each point shifts over time, each at a different speed.
+  uint16_t ms = millis();
+  leds[XY2( i, j)] += CHSV( ms / 29, 200, 255);
+  leds[XY2( j, k)] += CHSV( ms / 41, 200, 255);
+  leds[XY2( k, i)] += CHSV( ms / 73, 200, 255);
+}
+
 
