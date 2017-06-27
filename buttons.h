@@ -1,5 +1,12 @@
 // buttons.h
-#define BUTTON_PIN 0  
+#define BUTTON_PIN 0
+
+// Time after changing settings before settings are saved to EEPROM
+#define EEPROMDELAY 2000
+unsigned long now;
+unsigned long lastCycle = millis();
+unsigned long eepromMillis;
+bool    eepromOutdated;
 
 // Button timing variables
 unsigned int debounce = 20; // ms debounce period to prevent flickering when pressing or releasing the button
@@ -47,6 +54,7 @@ int checkButton()
         DConUp = false;
         DCwaiting = false;
         singleOK = false;
+        eepromOutdated = true;
       }
     }
   }
@@ -54,6 +62,7 @@ int checkButton()
   if ( buttonVal == HIGH && (millis() - upTime) >= DCgap && DCwaiting == true && DConUp == false && singleOK == true) {
     event = 1;
     DCwaiting = false;
+    eepromOutdated = true;
   }
   // Test for hold
   if (buttonVal == LOW && (millis() - downTime) >= holdTime) {
@@ -66,12 +75,14 @@ int checkButton()
       DCwaiting = false;
       //downTime = millis();
       holdEventPast = true;
+      eepromOutdated = true;
     }
     // Trigger "long" hold
     if ((millis() - downTime) >= longHoldTime) {
       if (not longHoldEventPast) {
         event = 4;
         longHoldEventPast = true;
+        eepromOutdated = true;
       }
     }
   }

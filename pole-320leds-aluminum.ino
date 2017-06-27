@@ -1,4 +1,5 @@
 #include <FastLED.h>
+#include <EEPROM.h>
 #include <Wire.h>
 #include <Adafruit_MMA8451.h>
 #include <Adafruit_Sensor.h>
@@ -27,6 +28,8 @@ int16_t crawlCounter = 0;
 int8_t  beaconCounter = 0;
 float   timer;
 byte    currentBrightness = STARTBRIGHTNESS; // 0-255 will be scaled to 0-MAXBRIGHTNESS
+bool    autoCycle;
+//bool    eepromOutdated;
 
 fract8 chanceOfGlitter = 100;
 
@@ -58,7 +61,7 @@ functionList effectList0[] = {
   plasma,
   inoise8_mover,
   fire,
-  fire2,
+  //  fire2,
   threeSine,
   crawl2,
   crawl,
@@ -77,7 +80,21 @@ byte numEffects;
 void setup() {
   //  LEDS.addLeds<WS2812, DATA_PIN, GRB>(leds, NUM_LEDS);
   LEDS.addLeds<NEOPIXEL, DATA_PIN>(leds, NUM_LEDS);
-  LEDS.setBrightness(currentBrightness);
+
+  // check to see if EEPROM has been used yet
+  // if so, load the stored settings
+  byte eepromWasWritten = EEPROM.read(0);
+  if (eepromWasWritten == 99) {
+    currentEffect =     EEPROM.read(1);
+    autoCycle =         EEPROM.read(2);
+    currentBrightness = EEPROM.read(3);
+    //    randomizedEffect =  EEPROM.read(4);
+    //    cycleTime =         EEPROM.read(5) * 1000;
+  }
+
+  // set global brightness value
+  FastLED.setBrightness(scale8(currentBrightness, MAXBRIGHTNESS));
+
   // Initialize the button
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   digitalWrite(BUTTON_PIN, HIGH);
@@ -144,10 +161,11 @@ void loop() {
 
     random16_add_entropy(1); // make the random values a bit more random-ish
   }
-
-  //  if (fadingActive) fadeTo(fadeBaseColor, 1);
-
   FastLED.show();
+
+  // Save the current time for state.
+  now = millis();
+  checkEEPROM();
 }
 
 void buttons() {
@@ -165,3 +183,28 @@ void buttons() {
       break;
   }
 }
+
+// write EEPROM value if it's different from stored value
+void updateEEPROM(byte location, byte value) {
+  if (!autoCycle) {
+    if (EEPROM.read(location) != value) EEPROM.write(location, value);
+  }
+}
+
+// Write settings to EEPROM if necessary
+void checkEEPROM() {
+  if (eepromOutdated) {
+    if (now - eepromMillis > EEPROMDELAY) {
+      updateEEPROM(0, 99);
+      updateEEPROM(1, currentEffect);
+      updateEEPROM(2, autoCycle);
+      updateEEPROM(3, currentBrightness);
+      //      updateEEPROM(4, randomizedEffect);
+      //      updateEEPROM(5, paletteN);
+      //      updateEEPROM(6, randomPalette);
+      //      updateEEPROM(7, cycleTime/1000);
+      eepromOutdated = false;
+    }
+  }
+}
+
